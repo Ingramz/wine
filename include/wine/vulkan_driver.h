@@ -21,6 +21,8 @@ struct vulkan_funcs
      * needs to provide. Other function calls will be provided indirectly by dispatch
      * tables part of dispatchable Vulkan objects such as VkInstance or vkDevice.
      */
+    VkResult (*p_vkAcquireNextImage2KHR)(VkDevice, const VkAcquireNextImageInfoKHR *, uint32_t *);
+    VkResult (*p_vkAcquireNextImageKHR)(VkDevice, VkSwapchainKHR, uint64_t, VkSemaphore, VkFence, uint32_t *);
     VkResult (*p_vkCreateInstance)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *);
     VkResult (*p_vkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR *, const VkAllocationCallbacks *, VkSwapchainKHR *);
     VkResult (*p_vkCreateWin32SurfaceKHR)(VkInstance, const VkWin32SurfaceCreateInfoKHR *, const VkAllocationCallbacks *, VkSurfaceKHR *);
@@ -44,6 +46,12 @@ struct vulkan_funcs
 
     /* winevulkan specific functions */
     VkSurfaceKHR (*p_wine_get_native_surface)(VkSurfaceKHR);
+    /* Optional. Returns TRUE if FS hack is active, otherwise returns FALSE. If
+     * it returns TRUE, then real_sz will contain the actual display
+     * resolution; user_sz will contain the app's requested mode; and dst_blit
+     * will contain the area to blit the user image to in real coordinates.
+     * All parameters are optional. */
+    VkBool32 (*query_fs_hack)(VkSurfaceKHR surface, VkExtent2D *real_sz, VkExtent2D *user_sz, VkRect2D *dst_blit, VkFilter *filter);
 };
 
 extern const struct vulkan_funcs * __wine_get_vulkan_driver(UINT version);
@@ -55,6 +63,10 @@ static inline void *get_vulkan_driver_device_proc_addr(
 
     name += 2;
 
+    if (!strcmp(name, "AcquireNextImage2KHR"))
+        return vulkan_funcs->p_vkAcquireNextImage2KHR;
+    if (!strcmp(name, "AcquireNextImageKHR"))
+        return vulkan_funcs->p_vkAcquireNextImageKHR;
     if (!strcmp(name, "CreateSwapchainKHR"))
         return vulkan_funcs->p_vkCreateSwapchainKHR;
     if (!strcmp(name, "DestroySwapchainKHR"))
@@ -115,4 +127,23 @@ static inline void *get_vulkan_driver_instance_proc_addr(
     return get_vulkan_driver_device_proc_addr(vulkan_funcs, name);
 }
 
+typedef VkResult (WINAPI *PFN_native_vkCreateInstance)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *,
+                                                       void * (*)(VkInstance, const char *), void *);
+typedef VkResult (WINAPI *PFN_native_vkCreateDevice)(VkPhysicalDevice, const VkDeviceCreateInfo *, const VkAllocationCallbacks *, VkDevice *,
+                                                     void * (*)(VkInstance, const char *), void *);
+
+typedef struct VkCreateInfoWineDeviceCallback {
+    VkStructureType             sType;
+    const void*                 pNext;
+    PFN_native_vkCreateDevice   native_create_callback;
+    void*                       context;
+} VkCreateInfoWineDeviceCallback;
+#define VK_STRUCTURE_TYPE_CREATE_INFO_WINE_DEVICE_CALLBACK 2125312001
+typedef struct VkCreateInfoWineInstanceCallback {
+    VkStructureType             sType;
+    const void*                 pNext;
+    PFN_native_vkCreateInstance native_create_callback;
+    void*                       context;
+} VkCreateInfoWineInstanceCallback;
+#define VK_STRUCTURE_TYPE_CREATE_INFO_WINE_INSTANCE_CALLBACK 2125312002
 #endif /* __WINE_VULKAN_DRIVER_H */
